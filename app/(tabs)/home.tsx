@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 type BusinessProfile = {
   id: number;
@@ -50,12 +50,13 @@ type BusinessProfile = {
   membership_end_date?: string;
 };
 
-type Package = {
-  name: string;
-  price: string;
-  description: string;
-  features: string[];
-};
+// Package type - kept for future use
+// type Package = {
+//   name: string;
+//   price: string;
+//   description: string;
+//   features: string[];
+// };
 
 type Category = {
   id: number;
@@ -73,13 +74,9 @@ export default function WeddingHomeScreen() {
   const [cities, setCities] = useState<City[]>([]);
   const [showCityModal, setShowCityModal] = useState(false);
   const [selectedCity, setSelectedCity] = useState<City>({ id: 0, name: 'Select City' });
-  const [selectedTab, setSelectedTab] = useState('All');
-  const [searchQuery, setSearchQuery] = useState('');
   const [businessProfiles, setBusinessProfiles] = useState<BusinessProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<BusinessProfile | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
   const { user } = useAuth();
 
   // State for modals
@@ -90,8 +87,6 @@ export default function WeddingHomeScreen() {
   const [userGender, setUserGender] = useState('');
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [checkingUserData, setCheckingUserData] = useState(true);
-
-  const tabs = ['All', 'Top Rated', 'Nearby'];
 
   const categories: Category[] = [
     { id: 1, name: 'Venues', image: require('../../assets/images/Welwed1.jpg'), serviceType: 'Wedding Venues' },
@@ -110,11 +105,19 @@ export default function WeddingHomeScreen() {
   // Initialize app
   useEffect(() => {
     const initializeApp = async () => {
-      await fetchCities();
-      await checkUserCity();
+      try {
+        await fetchCities();
+        await checkUserCity();
+      } catch (error) {
+        console.error('Error initializing app:', error);
+        // Ensure loading states are set to false even on error
+        setCheckingUserData(false);
+        setLoading(false);
+      }
     };
 
     initializeApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Automatic profile checking every 5 seconds
@@ -126,6 +129,7 @@ export default function WeddingHomeScreen() {
     }, 5000);
 
     return () => clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   useEffect(() => {
@@ -134,7 +138,8 @@ export default function WeddingHomeScreen() {
       fetchBusinessProfiles();
       checkUserData();
     }
-  }, [selectedCity, selectedTab, searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCity]);
 
   // Check user's city from profile table
   const checkUserCity = async () => {
@@ -142,6 +147,8 @@ export default function WeddingHomeScreen() {
       if (!user) {
         // If no user, load from local storage
         await loadSavedCity();
+        setCheckingUserData(false);
+        setLoading(false);
         return;
       }
 
@@ -154,17 +161,28 @@ export default function WeddingHomeScreen() {
       if (error) {
         console.error('Error fetching user city:', error);
         await loadSavedCity();
+        setCheckingUserData(false);
+        setLoading(false);
         return;
       }
 
       if (data && data.city_id && data.cities) {
         // User has a city set in profile
-        const userCity = {
-          id: data.cities.id,
-          name: data.cities.name
-        };
-        setSelectedCity(userCity);
-        setShowCityModalFirst(false);
+        // Handle cities as object (from join) or array
+        const cityData = Array.isArray(data.cities) ? data.cities[0] : data.cities;
+        if (cityData && cityData.id && cityData.name) {
+          const userCity = {
+            id: cityData.id,
+            name: cityData.name
+          };
+          setSelectedCity(userCity);
+          setShowCityModalFirst(false);
+        } else {
+          await loadSavedCity();
+          if (selectedCity.id === 0) {
+            setShowCityModalFirst(true);
+          }
+        }
       } else {
         // User doesn't have a city set, show modal
         await loadSavedCity();
@@ -177,6 +195,9 @@ export default function WeddingHomeScreen() {
       await loadSavedCity();
     } finally {
       setCheckingUserData(false);
+      // Always set loading to false to prevent infinite loading
+      // The fetchBusinessProfiles will handle loading state if city is selected
+      setLoading(false);
     }
   };
 
@@ -198,7 +219,7 @@ export default function WeddingHomeScreen() {
       } else {
         setShowWelcomeModal(false);
       }
-    } catch (error) {
+    } catch {
       setShowWelcomeModal(true);
     }
   };
@@ -233,7 +254,7 @@ export default function WeddingHomeScreen() {
       Alert.alert('Success', 'Profile saved successfully!');
       setShowWelcomeModal(false);
       
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to save profile');
     } finally {
       setIsSavingUser(false);
@@ -296,7 +317,12 @@ export default function WeddingHomeScreen() {
   };
 
   const fetchBusinessProfiles = async () => {
-    if (selectedCity.id === 0) return;
+    if (selectedCity.id === 0) {
+      // If no city selected, still set loading to false to prevent infinite loading
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     
     setRefreshing(true);
     try {
@@ -310,15 +336,8 @@ export default function WeddingHomeScreen() {
         .eq('city_id', selectedCity.id)
         .eq('is_premium_member', true);
 
-      if (selectedTab === 'Top Rated') {
-        query = query.order('rating', { ascending: false });
-      } else if (selectedTab === 'Nearby') {
-        query = query.order('rating', { ascending: false });
-      }
-
-      if (searchQuery) {
-        query = query.ilike('business_name', `%${searchQuery}%`);
-      }
+      // Order by rating by default
+      query = query.order('rating', { ascending: false });
 
       const { data, error } = await query;
       
@@ -330,7 +349,7 @@ export default function WeddingHomeScreen() {
       ) || [];
       
       setBusinessProfiles(activePremiumProfiles);
-    } catch (error) {
+    } catch {
       Alert.alert('Error', 'Failed to fetch business profiles');
     } finally {
       setLoading(false);
@@ -346,40 +365,41 @@ export default function WeddingHomeScreen() {
     checkUserData();
   };
 
-  const parsePackageDetails = (packageDetails: string): Package[] => {
-    try {
-      if (!packageDetails) return [];
-      const parsed = JSON.parse(packageDetails);
-      return Array.isArray(parsed) ? parsed : [parsed];
-    } catch (error) {
-      return [];
-    }
-  };
+  // Package parsing helper - kept for future use
+  // const parsePackageDetails = (packageDetails: string): Package[] => {
+  //   try {
+  //     if (!packageDetails) return [];
+  //     const parsed = JSON.parse(packageDetails);
+  //     return Array.isArray(parsed) ? parsed : [parsed];
+  //   } catch {
+  //     return [];
+  //   }
+  // };
 
   const filterBusinessByService = (serviceType: string) => {
     return businessProfiles.filter(profile => profile.service?.name === serviceType);
   };
 
-  const addToCart = async (item: BusinessProfile) => {
-    if (!user) {
-      Alert.alert('Login Required', 'Please login to add vendors to your cart');
-      router.push({ pathname: '/(auth)/sign-up' });
-      return;
-    }
+  // Add to cart function - kept for future use
+  // const addToCart = async (item: BusinessProfile) => {
+  //   if (!user) {
+  //     Alert.alert('Login Required', 'Please login to add vendors to your cart');
+  //     router.push({ pathname: '/(auth)/sign-up' });
+  //     return;
+  //   }
 
-    try {
-      const { error } = await supabase
-        .from('cart_items')
-        .insert([{ user_id: user.id, business_id: item.id }]);
+  //   try {
+  //     const { error } = await supabase
+  //       .from('cart_items')
+  //       .insert([{ user_id: user.id, business_id: item.id }]);
       
-      if (error) throw error;
+  //     if (error) throw error;
       
-      Alert.alert('Added to Cart', `${item.business_name} has been added to your booking cart`);
-      setModalVisible(false);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add to cart');
-    }
-  };
+  //     Alert.alert('Added to Cart', `${item.business_name} has been added to your booking cart`);
+  //   } catch {
+  //     Alert.alert('Error', 'Failed to add to cart');
+  //   }
+  // };
 
   const openDetails = (item: BusinessProfile) => {
     router.push({
@@ -452,7 +472,7 @@ export default function WeddingHomeScreen() {
           </View>
           <TouchableOpacity 
             style={styles.cartButton}
-            onPress={() => router.push("/(tabs)/booking")}
+            onPress={() => router.push("/(tabs)/booking" as any)}
           >
             <Ionicons name="cart-outline" size={24} color="#8B4513" />
           </TouchableOpacity>

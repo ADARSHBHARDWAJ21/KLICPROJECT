@@ -70,11 +70,21 @@ export default function SignIn() {
         });
 
         if (result.status === "needs_first_factor") {
-          await signIn.prepareFirstFactor({
-            strategy: "email_code",
-          });
-          setOtpSent(true);
-          Alert.alert("OTP Sent", "Please check your email for the verification code.");
+          // Get the email address ID from supported first factors
+          const emailFactor = result.supportedFirstFactors?.find(
+            (factor: any) => factor.strategy === "email_code"
+          ) as any;
+          
+          if (emailFactor && emailFactor.emailAddressId) {
+            await signIn.prepareFirstFactor({
+              strategy: "email_code",
+              emailAddressId: emailFactor.emailAddressId,
+            });
+            setOtpSent(true);
+            Alert.alert("OTP Sent", "Please check your email for the verification code.");
+          } else {
+            Alert.alert("Error", "Email code factor not available. Please try password sign-in.");
+          }
         } else {
           console.log("Unexpected status for OTP sign-in:", result.status);
           Alert.alert("Sign in failed", "Unable to initiate OTP sign-in. Please try again.");
@@ -119,7 +129,7 @@ export default function SignIn() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.replace("/(tabs)/home");
+        router.replace("../(tabs)/home.tsx");
       } else {
         Alert.alert("Verification failed", "Please check your code and try again.");
       }
@@ -131,12 +141,22 @@ export default function SignIn() {
   }
 
   async function handleResendOTP() {
-    if (!isLoaded) return;
+    if (!isLoaded || !signIn) return;
     try {
-      await signIn.prepareFirstFactor({
-        strategy: "email_code",
-      });
-      Alert.alert("OTP Resent", "A new verification code has been sent to your email.");
+      // Get the email address ID from supported first factors
+      const emailFactor = signIn.supportedFirstFactors?.find(
+        (factor: any) => factor.strategy === "email_code"
+      ) as any;
+      
+      if (emailFactor && emailFactor.emailAddressId) {
+        await signIn.prepareFirstFactor({
+          strategy: "email_code",
+          emailAddressId: emailFactor.emailAddressId,
+        });
+        Alert.alert("OTP Resent", "A new verification code has been sent to your email.");
+      } else {
+        Alert.alert("Error", "Unable to resend OTP. Please try signing in again.");
+      }
     } catch (err: any) {
       Alert.alert("Error", err.errors?.[0]?.message || "Failed to resend OTP");
     }

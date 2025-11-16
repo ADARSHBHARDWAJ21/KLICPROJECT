@@ -48,7 +48,7 @@ export default function SignUp() {
         // Account created without verification needed (shouldn't happen with email)
         if (result.createdSessionId) {
           await setActive({ session: result.createdSessionId });
-          router.replace("/(tabs)/home");
+          router.replace("../(tabs)/home.tsx");
         }
       } else {
         console.log("Unexpected sign-up status:", result.status);
@@ -105,9 +105,7 @@ export default function SignUp() {
               console.log("Session activated successfully");
               setOtpCode("");
               setOtpSent(false);
-              setTimeout(() => {
-                router.replace("/(tabs)/home");
-              }, 200);
+              router.replace("/(tabs)/home");
               return;
             }
             
@@ -120,17 +118,19 @@ export default function SignUp() {
             
             // Re-check sign-up status - it should be complete after email verification
             console.log("Re-checking sign-up status after wait");
-            console.log("Sign-up status:", signUp.status);
+            // Re-check the current status after waiting
+            // Note: Status may change after Clerk processes, so we check the actual current value
+            const currentStatus = signUp.status as string;
+            console.log("Current sign-up status:", currentStatus);
             console.log("Session ID:", signUp.createdSessionId);
             
-            if (signUp.status === "complete" && signUp.createdSessionId) {
+            // Check if status has changed to complete (using type assertion since status can change)
+            if (currentStatus === "complete" && signUp.createdSessionId) {
               await setActive({ session: signUp.createdSessionId });
               console.log("Email/password sign-up completed successfully");
               setOtpCode("");
               setOtpSent(false);
-              setTimeout(() => {
-                router.replace("/(tabs)/home");
-              }, 200);
+              router.replace("/(tabs)/home");
               return;
             }
             
@@ -138,14 +138,14 @@ export default function SignUp() {
             // Email is verified, so account should be created
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            if (signUp.status === "complete" && signUp.createdSessionId) {
+            // Check status again after second wait (status may have changed)
+            const finalStatus = signUp.status as string;
+            if (finalStatus === "complete" && signUp.createdSessionId) {
               await setActive({ session: signUp.createdSessionId });
               console.log("Sign-up completed on second check");
               setOtpCode("");
               setOtpSent(false);
-              setTimeout(() => {
-                router.replace("/(tabs)/home");
-              }, 200);
+              router.replace("/(tabs)/home");
               return;
             }
             
@@ -202,13 +202,13 @@ export default function SignUp() {
             console.log("After update - status:", completeResult.status);
             console.log("After update - signUp.status:", signUp.status);
             
-            if (signUp.status === "complete" && signUp.createdSessionId) {
+            // Check if status changed after update (status may change after update)
+            const updatedStatus = signUp.status as string;
+            if (updatedStatus === "complete" && signUp.createdSessionId) {
               await setActive({ session: signUp.createdSessionId });
               setOtpCode("");
               setOtpSent(false);
-              setTimeout(() => {
-                router.replace("/(tabs)/home");
-              }, 100);
+              router.replace("/(tabs)/home");
               return;
             }
           } catch (updateErr: any) {
@@ -284,9 +284,7 @@ export default function SignUp() {
             console.log("Session activated, redirecting to home");
             setOtpCode("");
             setOtpSent(false);
-            setTimeout(() => {
-              router.replace("/(tabs)/home");
-            }, 200);
+            router.replace("/(tabs)/home");
           } catch (activeErr: any) {
             console.error("Error activating session:", activeErr);
             Alert.alert(
@@ -310,9 +308,7 @@ export default function SignUp() {
             console.log("Session activated from result, redirecting to home");
             setOtpCode("");
             setOtpSent(false);
-            setTimeout(() => {
-              router.replace("/(tabs)/home");
-            }, 200);
+            router.replace("/(tabs)/home");
           } catch (activeErr: any) {
             console.error("Error activating session from result:", activeErr);
             Alert.alert(
@@ -356,12 +352,10 @@ export default function SignUp() {
             await setActive({ session: result.createdSessionId });
             setOtpCode("");
             setOtpSent(false);
-            setTimeout(() => {
-              router.replace("/(tabs)/home");
-            }, 200);
+            router.replace("/(tabs)/home");
           } catch (activeErr: any) {
             console.error("Error activating session from result fallback:", activeErr);
-            Alert.alert(
+      Alert.alert(
               "Account Created",
               "Your account has been successfully created! Please sign in.",
               [

@@ -10,15 +10,12 @@ const Index = () => {
   useEffect(() => {
     if (!isLoaded) return;
 
-    const redirectTimer = setTimeout(() => {
-      if (isSignedIn) {
-        router.replace("/(tabs)/home");
-      } else {
-        router.replace("/(auth)/welcome");
-      }
-    }, 500);
-
-    return () => clearTimeout(redirectTimer);
+    // Redirect immediately without delay
+    if (isSignedIn) {
+      router.replace("/(tabs)/home");
+    } else {
+      router.replace("/(auth)/welcome");
+    }
   }, [isLoaded, isSignedIn, router]);
 
   if (!isLoaded) {
