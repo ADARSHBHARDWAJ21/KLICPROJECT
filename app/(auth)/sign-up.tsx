@@ -8,55 +8,51 @@ import GoogleAuth from "../../lib/googleauth";
 export default function SignUp() {
   const { signUp, setActive, isLoaded } = useSignUp();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState("");
 
-  async function handleSignUp() {
-    if (!isLoaded || !signUp) return;
+  async function handleSendOTP() {
+    if (!isLoaded || !signUp) {
+      Alert.alert("Error", "Please wait, system is initializing...");
+      return;
+    }
+
+    if (!email.trim()) {
+      Alert.alert("Email required", "Please enter a valid email address");
+      return;
+    }
 
     try {
       setSending(true);
-      // Validate password
-      if (!password || password.length < 8) {
-        Alert.alert("Password Required", "Please enter a password with at least 8 characters.");
-        setSending(false);
-        return;
-      }
+      const normalizedEmail = email.trim().toLowerCase();
 
-      // Create sign-up with email OTP strategy
-      const result = await signUp.create({
-        emailAddress: email,
-        password: password,
+      await signUp.create({
+        emailAddress: normalizedEmail,
       });
 
-      console.log("Sign up result status:", result.status);
-
-      // Prepare email verification code
-      if (result.status === "missing_requirements") {
-        // Email verification is required
-        try {
-          await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-          setOtpSent(true);
-          Alert.alert("OTP Sent", "Please check your email for the verification code.");
-        } catch (verifyErr: any) {
-          console.error("Error preparing verification:", verifyErr);
-          Alert.alert("Error", verifyErr.errors?.[0]?.message || "Failed to send verification code");
-        }
-      } else if (result.status === "complete") {
-        // Account created without verification needed (shouldn't happen with email)
-        if (result.createdSessionId) {
-          await setActive({ session: result.createdSessionId });
-          router.replace("../(tabs)/home.tsx");
-        }
-      } else {
-        console.log("Unexpected sign-up status:", result.status);
-        Alert.alert("Error", "Unexpected response. Please try again.");
-      }
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
+      setOtpSent(true);
+      Alert.alert("OTP sent", "Please check your email for the verification code.");
     } catch (err: any) {
       console.error("Sign up error:", err);
-      Alert.alert("Sign up error", err.errors?.[0]?.message || "Failed to sign up");
+      const message = err.errors?.[0]?.message || err.message || "Failed to start sign up";
+
+      if (message.toLowerCase().includes("already") || message.toLowerCase().includes("exists")) {
+        Alert.alert(
+          "Account already exists",
+          "Please sign in with this email or use Google.",
+          [
+            {
+              text: "Go to sign in",
+              onPress: () => router.replace("./sign-in"),
+            },
+            { text: "OK" },
+          ]
+        );
+      } else {
+        Alert.alert("Sign up error", message);
+      }
     } finally {
       setSending(false);
     }
@@ -68,326 +64,33 @@ export default function SignUp() {
       return;
     }
 
-    if (!otpCode || otpCode.length !== 6) {
-      Alert.alert("Error", "Please enter a valid 6-digit OTP code");
+    if (!otpCode || otpCode.trim().length !== 6) {
+      Alert.alert("Invalid code", "Enter the 6-digit code sent to your email.");
       return;
     }
 
     try {
       setSending(true);
-      
-      // Attempt email verification
-      const result = await signUp.attemptEmailAddressVerification({
+      const verification = await signUp.attemptEmailAddressVerification({
         code: otpCode.trim(),
       });
 
-      console.log("Verification result status:", result.status);
-      console.log("Sign-up status after verification:", signUp.status);
-      console.log("Missing fields:", signUp.missingFields);
-      console.log("Unverified fields:", signUp.unverifiedFields);
-
-      // After email verification, check if we need to complete the sign-up
-      if (signUp.status === "missing_requirements") {
-        const missingFields = signUp.missingFields || [];
-        console.log("Missing fields detected:", missingFields);
-        
-        // If only phone_number is missing, we should be able to complete sign-up without it
-        // Phone number is NOT required for email/password sign-up - it's a separate authentication method
-        if (missingFields.length === 1 && missingFields.includes("phone_number")) {
-          console.log("Only phone_number is missing - completing email/password sign-up without phone");
-          console.log("Sign-up status:", signUp.status);
-          console.log("Created session ID:", signUp.createdSessionId);
-          
-          try {
-            // First, check if we can get a session immediately
-            if (signUp.createdSessionId) {
-              await setActive({ session: signUp.createdSessionId });
-              console.log("Session activated successfully");
-              setOtpCode("");
-              setOtpSent(false);
-              router.replace("/(tabs)/home");
-              return;
-            }
-            
-            // Email/password sign-up should complete without phone_number
-            // Try to finalize the sign-up - phone is optional for email-based accounts
-            console.log("Completing email/password sign-up (phone not required)...");
-            
-            // Wait a moment for Clerk to process the email verification
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Re-check sign-up status - it should be complete after email verification
-            console.log("Re-checking sign-up status after wait");
-            // Re-check the current status after waiting
-            // Note: Status may change after Clerk processes, so we check the actual current value
-            const currentStatus = signUp.status as string;
-            console.log("Current sign-up status:", currentStatus);
-            console.log("Session ID:", signUp.createdSessionId);
-            
-            // Check if status has changed to complete (using type assertion since status can change)
-            if (currentStatus === "complete" && signUp.createdSessionId) {
-              await setActive({ session: signUp.createdSessionId });
-              console.log("Email/password sign-up completed successfully");
-              setOtpCode("");
-              setOtpSent(false);
-              router.replace("/(tabs)/home");
-              return;
-            }
-            
-            // If still not complete, try one more time with a longer wait
-            // Email is verified, so account should be created
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            
-            // Check status again after second wait (status may have changed)
-            const finalStatus = signUp.status as string;
-            if (finalStatus === "complete" && signUp.createdSessionId) {
-              await setActive({ session: signUp.createdSessionId });
-              console.log("Sign-up completed on second check");
-              setOtpCode("");
-              setOtpSent(false);
-              router.replace("/(tabs)/home");
-              return;
-            }
-            
-            // If Clerk still requires phone_number, this is a configuration issue
-            // Email/password sign-up should NOT require phone
-            // Account should be created since email is verified
-            console.log("Email verified - account should exist even if sign-up status shows missing_requirements");
-            console.log("Redirecting to sign-in - account is ready");
-            
-            setOtpCode("");
-            setOtpSent(false);
-            
-            Alert.alert(
-              "Account Created Successfully! ✅",
-              `Your email has been verified!\n\nYour account is ready. Please sign in with your email and password.`,
-              [
-                {
-                  text: "Sign In Now",
-                  onPress: () => {
-                    router.replace("./sign-in");
-                  },
-                },
-              ]
-            );
-            return;
-          } catch (err: any) {
-            console.error("Error completing email/password sign-up:", err);
-            // Email is verified, so account should exist
-            setOtpCode("");
-            setOtpSent(false);
-            Alert.alert(
-              "Account Created! ✅",
-              `Your email has been verified!\n\nPlease sign in with your email and password.`,
-              [
-                {
-                  text: "Sign In",
-                  onPress: () => {
-                    router.replace("./sign-in");
-                  },
-                },
-              ]
-            );
-            return;
-          }
+      if (verification.status === "complete") {
+        const sessionId = verification.createdSessionId || signUp.createdSessionId;
+        if (sessionId) {
+          await setActive({ session: sessionId });
         }
-        
-        // If password is required but not provided
-        if (missingFields.includes("password") && !password) {
-          try {
-            const completeResult = await signUp.update({
-              password: password || undefined,
-            });
-            
-            console.log("After update - status:", completeResult.status);
-            console.log("After update - signUp.status:", signUp.status);
-            
-            // Check if status changed after update (status may change after update)
-            const updatedStatus = signUp.status as string;
-            if (updatedStatus === "complete" && signUp.createdSessionId) {
-              await setActive({ session: signUp.createdSessionId });
-              setOtpCode("");
-              setOtpSent(false);
-              router.replace("/(tabs)/home");
-              return;
-            }
-          } catch (updateErr: any) {
-            console.error("Update error:", updateErr);
-            Alert.alert(
-              "Password Required",
-              "A password is required to complete your account. Please enter a password.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setOtpSent(false);
-                    setOtpCode("");
-                  },
-                },
-              ]
-            );
-            return;
-          }
-        }
-        
-        // If phone_number is the only missing field, try to complete sign-up anyway
-        // Phone number should be optional for email sign-up
-        if (missingFields.length === 1 && missingFields.includes("phone_number")) {
-          // Try to get session and complete sign-up
-          if (signUp.createdSessionId) {
-            await setActive({ session: signUp.createdSessionId });
-            setOtpCode("");
-            setOtpSent(false);
-            setTimeout(() => {
-              router.replace("/(tabs)/home");
-            }, 100);
-            return;
-          }
-        }
-        
-        // For other missing requirements, only show alert if it's not just phone_number
-        const nonPhoneFields = missingFields.filter(field => field !== "phone_number");
-        if (nonPhoneFields.length > 0) {
-          Alert.alert(
-            "Additional Information Required",
-            `Please complete: ${nonPhoneFields.join(", ")}`,
-            [
-              {
-                text: "OK",
-                onPress: () => {
-                  setOtpSent(false);
-                  setOtpCode("");
-                },
-              },
-            ]
-          );
-        } else {
-          // Only phone_number is missing - complete sign-up without showing alert
-          if (signUp.createdSessionId) {
-            await setActive({ session: signUp.createdSessionId });
-            setOtpCode("");
-            setOtpSent(false);
-            setTimeout(() => {
-              router.replace("/(tabs)/home");
-            }, 100);
-          }
-        }
-        return;
-      }
-
-      // Check if sign-up is complete
-      if (signUp.status === "complete") {
-        console.log("Sign-up complete! Session ID:", signUp.createdSessionId);
-        if (signUp.createdSessionId) {
-          try {
-            await setActive({ session: signUp.createdSessionId });
-            console.log("Session activated, redirecting to home");
-            setOtpCode("");
-            setOtpSent(false);
-            router.replace("/(tabs)/home");
-          } catch (activeErr: any) {
-            console.error("Error activating session:", activeErr);
-            Alert.alert(
-              "Account Created",
-              "Your account has been successfully created! Please sign in.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setOtpCode("");
-                    setOtpSent(false);
-                    router.replace("./sign-in");
-                  },
-                },
-              ]
-            );
-          }
-        } else if (result.createdSessionId) {
-          try {
-            await setActive({ session: result.createdSessionId });
-            console.log("Session activated from result, redirecting to home");
-            setOtpCode("");
-            setOtpSent(false);
-            router.replace("/(tabs)/home");
-          } catch (activeErr: any) {
-            console.error("Error activating session from result:", activeErr);
-            Alert.alert(
-              "Account Created",
-              "Your account has been successfully created! Please sign in.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setOtpCode("");
-                    setOtpSent(false);
-                    router.replace("./sign-in");
-                  },
-                },
-              ]
-            );
-          }
-        } else {
-          // Account created but noa session - redirect to sign in
-          console.log("Account created but no session ID available");
-          Alert.alert(
-            "Account Created Successfully",
-            "Your email has been verified and your account is ready! Please sign in with your email and password.",
-            [
-              {
-                text: "Sign In",
-                onPress: () => {
-                  setOtpCode("");
-                  setOtpSent(false);
-                  router.replace("./sign-in");
-                },
-              },
-            ]
-          );
-        }
-      } else if (result.status === "complete") {
-        // Fallback: check result status
-        console.log("Result status is complete, session ID:", result.createdSessionId);
-        if (result.createdSessionId) {
-          try {
-            await setActive({ session: result.createdSessionId });
-            setOtpCode("");
-            setOtpSent(false);
-            router.replace("/(tabs)/home");
-          } catch (activeErr: any) {
-            console.error("Error activating session from result fallback:", activeErr);
-      Alert.alert(
-              "Account Created",
-              "Your account has been successfully created! Please sign in.",
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    setOtpCode("");
-                    setOtpSent(false);
-                    router.replace("./sign-in");
-                  },
-                },
-              ]
-            );
-          }
-        }
+        setOtpCode("");
+        setOtpSent(false);
+        router.replace("/(tabs)/home");
       } else {
-        console.log("Unexpected status - signUp.status:", signUp.status, "result.status:", result.status);
-        Alert.alert("Verification in progress", "Please wait a moment and try again.");
+        Alert.alert("Verification pending", "Please wait a moment and try again.");
       }
     } catch (err: any) {
-      console.error("Verification error:", err);
       const errorMessage = err.errors?.[0]?.message || err.message || "Invalid verification code";
-      
-      // Check if it's a rate limit or temporary error
-      if (errorMessage.includes("rate") || errorMessage.includes("too many")) {
-        Alert.alert("Too Many Attempts", "Please wait a moment before trying again.");
-      } else if (errorMessage.includes("expired")) {
-        Alert.alert("Code Expired", "The verification code has expired. Please request a new one.", [
-          {
-            text: "Resend",
-            onPress: handleResendOTP,
-          },
+      if (errorMessage.toLowerCase().includes("expired")) {
+        Alert.alert("Code expired", "Request a new code to continue.", [
+          { text: "Resend", onPress: handleResendOTP },
           { text: "Cancel" },
         ]);
       } else {
@@ -399,10 +102,10 @@ export default function SignUp() {
   }
 
   async function handleResendOTP() {
-    if (!isLoaded) return;
+    if (!isLoaded || !signUp) return;
     try {
       await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
-      Alert.alert("OTP Resent", "A new verification code has been sent to your email.");
+      Alert.alert("OTP resent", "A new verification code has been sent to your email.");
     } catch (err: any) {
       Alert.alert("Error", err.errors?.[0]?.message || "Failed to resend OTP");
     }
@@ -439,6 +142,7 @@ export default function SignUp() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Create account</Text>
+      <Text style={styles.subtitle}>Use your email address to create an account with a one-time code.</Text>
       <TextInput
         placeholder="Email"
         value={email}
@@ -447,15 +151,7 @@ export default function SignUp() {
         keyboardType="email-address"
         style={styles.input}
       />
-      <TextInput
-        placeholder="Password"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        style={styles.input}
-      />
-      <Text style={styles.hint}>Enter a password for your account. An OTP will be sent to your email for verification.</Text>
-      <Button title={sending ? "Sending OTP..." : "Sign up & Send OTP"} onPress={handleSignUp} />
+      <Button title={sending ? "Sending OTP..." : "Send OTP"} onPress={handleSendOTP} disabled={!email.trim() || sending} />
 
       <View style={styles.divider}>
         <View style={styles.dividerLine} />
@@ -494,12 +190,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 8,
     borderColor: "#ddd",
-  },
-  hint: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 15,
-    fontStyle: "italic",
   },
   divider: {
     flexDirection: "row",
