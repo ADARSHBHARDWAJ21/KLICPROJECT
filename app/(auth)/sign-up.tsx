@@ -327,7 +327,7 @@ export default function SignUp() {
             );
           }
         } else {
-          // Account created but no session - redirect to sign in
+          // Account created but noa session - redirect to sign in
           console.log("Account created but no session ID available");
           Alert.alert(
             "Account Created Successfully",
